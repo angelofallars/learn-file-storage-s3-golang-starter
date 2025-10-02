@@ -110,10 +110,24 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		s3Key = "other/" + s3Key
 	}
 
+	fastStartFilePath, err := processVideoForFastStart(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to create fast start video", err)
+		return
+	}
+
+	fastStartFile, err := os.Open(fastStartFilePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to open fast start file", err)
+		return
+	}
+	defer os.Remove(fastStartFile.Name())
+	defer fastStartFile.Close()
+
 	if _, err := cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         ToPtr(s3Key),
-		Body:        tempFile,
+		Body:        fastStartFile,
 		ContentType: ToPtr(mediaType),
 	}); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to write to S3", err)
@@ -176,4 +190,17 @@ func getVideoAspectRatio(filePath string) (string, error) {
 	}
 
 	return "other", nil
+}
+
+func processVideoForFastStart(filePath string) (string, error) {
+	outputFilePath := filePath + ".processing"
+	cmd := exec.Command(
+		"ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", outputFilePath,
+	)
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("unable to run command: %w", err)
+	}
+
+	return outputFilePath, nil
 }
