@@ -134,13 +134,20 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	video.VideoURL = ToPtr(fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s",
-		cfg.s3Bucket, cfg.s3Region, s3Key))
+	video.VideoURL = ToPtr(fmt.Sprintf("%s,%s", cfg.s3Bucket, s3Key))
 
 	if err := cfg.db.UpdateVideo(video); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to write to database", err)
 		return
 	}
+
+	video, err = cfg.dbVideoToSignedVideo(video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't get video URL", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, video)
 }
 
 func ToPtr[T any](v T) *T {
